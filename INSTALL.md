@@ -6,7 +6,7 @@ llms.txt, синхронизация каталога, управляемые р
 
 ## Требования
 
-- PHP 8.1+, Laravel 9–12
+- PHP 8.1+, Laravel 9–13
 - Доступ на запись в `public/` (upload_file: llms.txt, robots.txt, .well-known/*)
 - Проект в GEO Engine с доменом сайта + API-ключ (Settings → API Keys, `ge_…`)
 
@@ -28,7 +28,7 @@ composer require geoengine/agent:@dev
 php artisan vendor:publish --tag=geoengine-config
 
 # 4. Установите и зарегистрируйте агента
-php artisan geoengine:install --key=ge_ВАШ_КЛЮЧ --site=https://solaris.rf
+php artisan geoengine:install --key=ge_ВАШ_КЛЮЧ --site=https://xn--h1afijce9g.xn--p1ai
 ```
 
 `geoengine:install` сам: прогонит миграции, запишет `.env`, зарегистрирует

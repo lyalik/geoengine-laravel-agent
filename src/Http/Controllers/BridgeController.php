@@ -29,6 +29,7 @@ class BridgeController extends Controller
         return response()->json([
             'status' => 'ok',
             'service' => 'geo-engine-agent',
+            'framework' => 'laravel',
             'version' => Version::VERSION,
             'platform' => 'laravel',
             'laravel' => app()->version(),
@@ -178,15 +179,13 @@ class BridgeController extends Controller
 
     public function updatePage(Request $request, string $pageId): JsonResponse
     {
-        $row = SeoMeta::where('path', SeoStore::normalizePath($pageId))->first();
-        if (!$row) {
-            return response()->json(['detail' => 'Page not found'], 404);
+        $path = SeoStore::normalizePath($pageId);
+        if (!preg_match('/^[\w\-\/]{1,200}$/u', $path)) {
+            return response()->json(['detail' => 'Invalid page slug'], 422);
         }
         $fields = SeoStore::fieldsFrom($request->all());
-        if ($fields) {
-            SeoStore::apply($row->path, $fields);
-        }
-        return response()->json(['ok' => true, 'page_id' => $pageId, 'page' => $row->path]);
+        SeoStore::apply($path, $fields);
+        return response()->json(['ok' => true, 'page_id' => $pageId, 'page' => $path]);
     }
 
     public function upsertPage(Request $request, string $pageId): JsonResponse
@@ -206,28 +205,31 @@ class BridgeController extends Controller
         $pageId = (string) ($body['page_id'] ?? $body['page'] ?? '');
         $path = SeoStore::normalizePath($pageId);
         if (!SeoMeta::where('path', $path)->exists() && $pageId === '') {
-            return response()->json(['success' => false, 'message' => 'Unknown page: (empty)']);
+            return response()->json(['success' => false, 'applied' => false, 'message' => 'Unknown page: (empty)']);
         }
 
-        $issueType = strtolower((string) ($body['issue_type'] ?? ''));
-        $fixContent = $body['fix_content'] ?? null;
-        $fieldMap = [
-            'missing_title' => 'title',
-            'missing_meta_description' => 'description',
-            'missing_canonical' => 'canonical_url',
-            'missing_structured_data' => 'structured_data',
-            'schema_markup' => 'structured_data',
-            'missing_h1' => 'h1',
-        ];
-        if (isset($fieldMap[$issueType]) && $fixContent !== null) {
-            // Apply ONLY the mapped field — labels in title/description are
-            // problem descriptions, not page content (bridge parity fix).
-            SeoStore::apply($path, [$fieldMap[$issueType] => $fixContent]);
-            return response()->json(['success' => true, 'page' => $path, 'applied' => [$fieldMap[$issueType]]]);
+        $issueType = strtolower(trim((string) ($body['issue_type'] ?? '')));
+        if ($issueType !== '') {
+            $executor = new TaskExecutor();
+            $res = $executor->execute([
+                'id' => 0,
+                'task_type' => 'fix_seo',
+                'payload' => [
+                    'url' => $path,
+                    'issue_type' => $issueType,
+                    'fix_content' => $body['fix_content'] ?? null,
+                ],
+            ]);
+            if (!($res['success'] ?? false)) {
+                return response()->json(['success' => false, 'applied' => false, 'message' => $res['error'] ?? 'fix failed']);
+            }
+            $field = $res['result_data']['field'] ?? $issueType;
+            return response()->json(['success' => true, 'page' => $path, 'applied' => [$field]]);
         }
+
         $fields = SeoStore::fieldsFrom($body);
-        if (!$fields && $fixContent !== null) {
-            $fields = ['description' => (string) $fixContent];
+        if (!$fields && isset($body['fix_content'])) {
+            $fields = ['description' => (string) $body['fix_content']];
         }
         if ($fields) {
             SeoStore::apply($path, $fields);

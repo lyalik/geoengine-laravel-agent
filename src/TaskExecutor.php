@@ -91,7 +91,7 @@ class TaskExecutor
         return [
             'success' => false,
             'message' => '',
-            'error' => 'Unsupported task type: ' . ($type ?: '(empty)')
+            'error' => 'Unknown task type: ' . ($type ?: '(empty)')
                 . ($why ? ' — ' . $why : ' on the Laravel agent'),
         ];
     }
@@ -187,18 +187,38 @@ class TaskExecutor
         $content = $payload['fix_content'] ?? $payload['value'] ?? $payload['content'] ?? null;
 
         $fieldMap = [
-            'title', 'meta_title', 'missing_title' => 'title',
-            'description', 'meta_description', 'missing_meta_description' => 'description',
+            'title' => 'title',
+            'meta_title' => 'title',
+            'missing_title' => 'title',
+            'short_title' => 'title',
+            'long_title' => 'title',
+            'duplicate_title' => 'title',
+            'description' => 'description',
+            'meta_description' => 'description',
+            'missing_description' => 'description',
+            'missing_meta_description' => 'description',
+            'short_description' => 'description',
+            'long_description' => 'description',
+            'duplicate_description' => 'description',
             'keywords' => 'keywords',
-            'canonical', 'missing_canonical' => 'canonical_url',
-            'h1', 'missing_h1' => 'h1',
-            'og_title' => 'og_title', 'og_description' => 'og_description', 'og_image' => 'og_image',
-            'schema', 'structured_data', 'missing_structured_data', 'schema_markup', 'add_schema' => 'structured_data',
-            'index', 'noindex' => 'indexable',
+            'canonical' => 'canonical_url',
+            'missing_canonical' => 'canonical_url',
+            'h1' => 'h1',
+            'missing_h1' => 'h1',
+            'og_title' => 'og_title',
+            'og_description' => 'og_description',
+            'og_image' => 'og_image',
+            'schema' => 'structured_data',
+            'structured_data' => 'structured_data',
+            'missing_schema' => 'structured_data',
+            'missing_structured_data' => 'structured_data',
+            'schema_markup' => 'structured_data',
+            'add_schema' => 'structured_data',
+            'index' => 'indexable',
+            'noindex' => 'indexable',
         ];
         $field = $fieldMap[$fixType] ?? null;
-        if ($field === null && $content !== null) {
-            // No explicit type — treat content as meta description (most common fix).
+        if ($field === null && $fixType === '' && $content !== null) {
             $field = 'description';
         }
         if ($field === null) {
@@ -206,6 +226,34 @@ class TaskExecutor
         }
         if ($content === null) {
             return ['success' => false, 'message' => '', 'error' => 'fix_seo: missing fix_content'];
+        }
+        if (is_string($content)) {
+            $trim = trim($content);
+            if ($field === 'title' && preg_match('#<title[^>]*>(.*?)</title>#is', $trim, $m)) {
+                $content = trim($m[1]);
+            } elseif ($field === 'description' && stripos($trim, '<meta') !== false && preg_match('#content=["\'](.*?)["\']#is', $trim, $m)) {
+                $content = trim($m[1]);
+            } elseif ($field === 'canonical_url' && stripos($trim, '<link') !== false && preg_match('#href=["\']([^"\']+)["\']#i', $trim, $m)) {
+                $content = trim($m[1]);
+            } elseif ($field === 'h1' && preg_match('#<h1[^>]*>(.*?)</h1>#is', $trim, $m)) {
+                $content = trim($m[1]);
+            } elseif ($field === 'structured_data') {
+                if (preg_match_all('#<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>#is', $trim, $ms)) {
+                    $parsed = [];
+                    foreach ($ms[1] as $s) {
+                        $d = json_decode(trim($s), true);
+                        if (is_array($d)) {
+                            $parsed[] = $d;
+                        }
+                    }
+                    $content = count($parsed) === 1 ? $parsed[0] : ($parsed ?: $trim);
+                } else {
+                    $d = json_decode($trim, true);
+                    if (is_array($d)) {
+                        $content = $d;
+                    }
+                }
+            }
         }
         if ($field === 'indexable') {
             $content = !in_array(strtolower((string) $content), ['noindex', 'false', '0'], true);
@@ -484,7 +532,17 @@ class TaskExecutor
             return ['success' => false, 'message' => '', 'error' => 'update_product: missing product_id'];
         }
         $fields = (array) ($payload['fields'] ?? $payload);
-        unset($fields['product_id'], $fields['external_id'], $fields['id'], $fields['url']);
+        $allowName = !empty($fields['_allow_name']) || !empty($payload['_allow_name']);
+        $restoreName = !empty($fields['_restore_name']) || !empty($payload['_restore_name']);
+        unset($fields['product_id'], $fields['external_id'], $fields['id'], $fields['url'], $fields['_allow_name'], $fields['_restore_name']);
+
+        $existing = Product::where('external_id', $rawId)->first();
+        $before = $existing ? ($existing->fields ?? []) : [];
+        $skippedFields = [];
+        if (array_key_exists('name', $fields) && !empty($before['name']) && !($allowName || $restoreName)) {
+            unset($fields['name']);
+            $skippedFields[] = 'name:protected';
+        }
 
         // Photo/video URLs: fetch once into public/uploads/geoengine-media
         // because platform signed URLs expire.
@@ -500,11 +558,10 @@ class TaskExecutor
                 $fields['media_' . $key] = $local;
             } else {
                 $mediaWarnings[] = $key . ': download failed';
+                $skippedFields[] = $key . ': download failed';
             }
         }
 
-        $existing = Product::where('external_id', $rawId)->first();
-        $before = $existing ? ($existing->fields ?? []) : [];
         $snapshot = [];
         foreach (['name', 'description', 'short_description', 'meta_title', 'meta_description', 'attributes', 'price'] as $k) {
             if (array_key_exists($k, $before)) {
@@ -534,7 +591,9 @@ class TaskExecutor
         $resultData = ['before' => $snapshot, 'product' => $merged];
         if ($mediaWarnings) {
             $resultData['warnings'] = $mediaWarnings;
-            $resultData['skipped_fields'] = $mediaWarnings;
+        }
+        if ($skippedFields) {
+            $resultData['skipped_fields'] = $skippedFields;
         }
         return ['success' => true, 'message' => 'product updated', 'result_data' => $resultData];
     }

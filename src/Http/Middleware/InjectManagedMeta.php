@@ -170,10 +170,40 @@ class InjectManagedMeta
             return;
         }
 
-        $block = "<!-- GEO Engine managed meta -->\n" . implode("\n", $tags) . "\n<!-- /GEO Engine -->\n";
-        $newContent = preg_replace('/<\/head>/i', $block . '</head>', $content, 1);
-        if (is_string($newContent) && $newContent !== $content) {
-            $response->setContent($newContent);
+        // Strip pre-existing template tags for keys we emit so the rendered
+        // HTML never carries two <title> or conflicting <link rel="canonical">
+        // tags (crawlers ignore duplicated canonicals and read the first title).
+        $headEnd = stripos($content, '</head>');
+        $head = substr($content, 0, $headEnd);
+        $tail = substr($content, $headEnd);
+        if ($row->title) {
+            $head = (string) preg_replace('#<title[^>]*>.*?</title>#is', '', $head);
         }
+        if ($canonical) {
+            $head = (string) preg_replace('#<link\s+[^>]*rel=["\']canonical["\'][^>]*>#i', '', $head);
+        }
+        $stripNames = [];
+        if ($row->description) $stripNames[] = 'description';
+        if ($row->keywords) $stripNames[] = 'keywords';
+        if (!$row->indexable) $stripNames[] = 'robots';
+        if ($ogTitle) $stripNames[] = 'og:title';
+        if ($ogDesc) $stripNames[] = 'og:description';
+        if ($ogImage) $stripNames[] = 'og:image';
+        $stripNames[] = 'og:type';
+        if ($canonical) $stripNames[] = 'og:url';
+        if ($twTitle) $stripNames[] = 'twitter:title';
+        if ($twDesc) $stripNames[] = 'twitter:description';
+        if ($twImage) $stripNames[] = 'twitter:image';
+        $stripNames[] = 'twitter:card';
+        foreach ($stripNames as $metaKey) {
+            $head = (string) preg_replace(
+                '#<meta\s+[^>]*(?:name|property)=["\']' . preg_quote($metaKey, '#') . '["\'][^>]*>#i',
+                '',
+                $head
+            );
+        }
+
+        $block = "<!-- GEO Engine managed meta -->\n" . implode("\n", $tags) . "\n<!-- /GEO Engine -->\n";
+        $response->setContent($head . $block . $tail);
     }
 }

@@ -10,7 +10,8 @@ class InstallCommand extends Command
     protected $signature = 'geoengine:install
         {--key= : Project API key (ge_…) — overrides GEO_ENGINE_PROJECT_KEY}
         {--site= : Public site URL — overrides GEO_ENGINE_SITE_URL/APP_URL}
-        {--no-register : Skip platform registration (config only)}';
+        {--no-register : Skip platform registration (config only)}
+        {--no-migrations : Skip geoengine_* table migrations (create them manually)}';
 
     protected $description = 'Install/activate the GEO Engine Laravel agent';
 
@@ -21,9 +22,23 @@ class InstallCommand extends Command
             $this->call('vendor:publish', ['--tag' => 'geoengine-config', '--force' => false]);
         }
 
-        // 2. Migrations.
-        $this->info('Running geoengine migrations…');
-        $this->call('migrate', ['--path' => 'database/migrations', '--force' => true]);
+        // 2. Migrations — ONLY the package's own geoengine_* migrations.
+        //    --realpath targets the package dir; pointing --path at the app's
+        //    database/migrations would run every pending app migration —
+        //    forbidden or destructive on many production setups.
+        if ($this->option('no-migrations')) {
+            $this->line('Skipped migrations. Create the geoengine_* tables manually (see database/migrations).');
+        } else {
+            $this->info('Running geoengine migrations…');
+            $status = $this->call('migrate', [
+                '--path' => dirname(__DIR__, 3) . '/database/migrations',
+                '--realpath' => true,
+                '--force' => true,
+            ]);
+            if ($status !== self::SUCCESS) {
+                $this->warn('Package migrations failed — if the geoengine_* tables already exist (e.g. created manually), rerun with --no-migrations.');
+            }
+        }
 
         // 3. Persist .env values when provided.
         $key = $this->option('key') ?: env('GEO_ENGINE_PROJECT_KEY');

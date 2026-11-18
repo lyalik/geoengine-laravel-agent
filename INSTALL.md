@@ -47,8 +47,14 @@ php artisan vendor:publish --tag=geoengine-config
 php artisan geoengine:install --key=ge_ВАШ_КЛЮЧ --site=https://xn--h1afijce9g.xn--p1ai
 ```
 
-`geoengine:install` сам: прогонит миграции, запишет `.env`, зарегистрирует
-агента на платформе и выдаст `GEO_ENGINE_AGENT_ID`/`GEO_ENGINE_AGENT_TOKEN`.
+`geoengine:install` сам: прогонит миграции **только пакета** (таблицы
+`geoengine_*`, путь `database/migrations` внутри пакета — миграции приложения
+не затрагиваются), запишет `.env`, зарегистрирует агента на платформе и выдаст
+`GEO_ENGINE_AGENT_ID`/`GEO_ENGINE_AGENT_TOKEN`.
+
+> На проектах, где миграции на проде запрещены или БД управляется вручную:
+> `php artisan geoengine:install --no-migrations` — создайте таблицы
+> `geoengine_*` вручную по `database/migrations/2026_11_14_000001_create_geoengine_tables.php`.
 
 ## Расписание (обязательный шаг для polling)
 
@@ -107,7 +113,8 @@ Webhook push: `POST /api/geo-engine/webhook` (X-GEOEngine-Token).
 ## Artisan-команды
 
 ```bash
-php artisan geoengine:install     # регистрация + миграции + .env
+php artisan geoengine:install     # регистрация + миграции пакета + .env
+php artisan geoengine:install --no-migrations  # без миграций (таблицы вручную)
 php artisan geoengine:poll        # один цикл poll+execute (для крона)
 php artisan geoengine:poll --ping # только heartbeat
 php artisan geoengine:status      # статус и счётчики managed-состояния

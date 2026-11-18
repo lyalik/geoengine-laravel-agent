@@ -12,6 +12,22 @@ llms.txt, синхронизация каталога, управляемые р
 
 ## Установка
 
+### Вариант А — напрямую из GitHub (рекомендуется)
+
+```bash
+# 1. Подключите репозиторий пакета
+composer config repositories.geoengine \
+  vcs https://github.com/lyalik/geoengine-agent-laravel
+
+# 2. Установите пакет
+composer require geoengine/agent:^1.9
+
+# 3. Опубликуйте конфиг (опционально — есть дефолты)
+php artisan vendor:publish --tag=geoengine-config
+```
+
+### Вариант Б — из скачанного zip-архива (geoengine-laravel.zip)
+
 ```bash
 # 1. Скопируйте пакет в проект
 mkdir -p packages/geoengine-agent

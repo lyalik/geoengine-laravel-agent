@@ -70,7 +70,12 @@ class SelfUpdater
             return ['ok' => true, 'already_up_to_date' => true, 'version' => $current];
         }
 
-        [$tmpZip, $servedSha, $servedVer] = $client->downloadPackage();
+        // downloadPackage() returns an associative array; accept a numeric
+        // list too so older/newer clients keep working.
+        $pkg = $client->downloadPackage();
+        $tmpZip = (string) ($pkg['path'] ?? $pkg[0] ?? '');
+        $servedSha = (string) ($pkg['sha256'] ?? $pkg[1] ?? '');
+        $servedVer = (string) ($pkg['version'] ?? $pkg[2] ?? '');
         try {
             // Prefer the sha of the archive actually served.
             $check = $servedSha !== '' ? strtolower($servedSha) : $expectedSha;

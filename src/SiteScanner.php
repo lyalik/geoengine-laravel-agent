@@ -130,7 +130,10 @@ class SiteScanner
         $chunks = array_chunk($pages, 500);
         $submitted = 0;
         foreach ($chunks as $i => $chunk) {
-            $ok = $client->submitPages($chunk, $i === 0 ? $crawlId : null);
+            // crawl_id on EVERY chunk — the server's "latest running crawl"
+            // fallback misroutes pages when two scans overlap, so later
+            // chunks would land in a different project's audit.
+            $ok = $client->submitPages($chunk, $crawlId);
             if (!$ok) {
                 return [
                     'success' => false,

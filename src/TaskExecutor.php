@@ -61,6 +61,7 @@ class TaskExecutor
                 'scan_site_structure' => SiteScanner::runAndSubmit($payload, $this->client),
                 'sync_redirects' => $this->syncRedirects($payload),
                 'publish_content_plan', 'create_content', 'update_article', 'update_content' => $this->publishContent($payload, $taskId, $type),
+                'inject_content_block' => $this->injectContentBlock($payload, $taskId),
                 'update_category', 'update_information' => $this->unsupported($type, 'Laravel agent has no native taxonomy/information pages — use publish_content_plan'),
                 'set_geotargeting' => $this->setGeotargeting($payload),
                 'seo_audit' => $this->seoAudit(),
@@ -143,6 +144,28 @@ class TaskExecutor
             'message' => "meta batch: {$applied}/" . count($items) . ' applied',
             'error' => $errors ? implode('; ', array_slice($errors, 0, 5)) : null,
             'result_data' => ['applied' => $applied, 'total' => count($items)],
+        ];
+    }
+
+    private function injectContentBlock(array $payload, int $taskId): array
+    {
+        $url = (string) ($payload['url'] ?? $payload['page'] ?? '');
+        $html = trim((string) ($payload['html'] ?? $payload['block'] ?? ''));
+        if ($url === '' || $html === '') {
+            return ['success' => false, 'message' => '', 'error' => 'inject_content_block: missing url/html'];
+        }
+        $position = (string) ($payload['position'] ?? 'after_h1');
+        if (!in_array($position, ['after_h1', 'before_body', 'prepend_body'], true)) {
+            $position = 'after_h1';
+        }
+        [$row, $applied] = SeoStore::apply($url, [
+            'content_block' => $html,
+            'content_block_position' => $position,
+        ], $taskId, 'inject_content_block');
+        return [
+            'success' => true,
+            'message' => 'content block stored for ' . SeoStore::normalizePath($url) . " ({$position})",
+            'result_data' => ['page' => SeoStore::normalizePath($url), 'position' => $position],
         ];
     }
 

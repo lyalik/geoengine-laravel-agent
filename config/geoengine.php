@@ -120,6 +120,11 @@ return [
     |
     */
 
+    // URL prefixes used when a model row only stores a slug — the scan
+    // builds /product/{slug} and /blog/{slug} paths from them.
+    'catalog_url_prefix' => env('GEO_ENGINE_CATALOG_URL_PREFIX', '/product/'),
+    'posts_url_prefix' => env('GEO_ENGINE_POSTS_URL_PREFIX', '/blog/'),
+
     'posts_model' => env('GEO_ENGINE_POSTS_MODEL', ''),
     'posts_map' => [
         'slug' => 'slug',

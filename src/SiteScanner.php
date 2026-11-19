@@ -90,6 +90,44 @@ class SiteScanner
         } catch (\Throwable) {
         }
 
+        // 4.5 Site's own catalog/posts models (when configured) — without
+        // this the scan only sees geoengine_* tables, i.e. pages the
+        // module already touched, never the real catalog.
+        $siteModels = [
+            ['model' => (string) config('geoengine.catalog_model', ''), 'map' => (array) config('geoengine.catalog_map', []), 'prefix' => (string) config('geoengine.catalog_url_prefix', '/product/')],
+            ['model' => (string) config('geoengine.posts_model', ''), 'map' => (array) config('geoengine.posts_map', []), 'prefix' => (string) config('geoengine.posts_url_prefix', '/blog/')],
+        ];
+        foreach ($siteModels as $m) {
+            $modelClass = $m['model'];
+            if ($modelClass === '' || !class_exists($modelClass)) {
+                continue;
+            }
+            try {
+                $map = $m['map'];
+                $urlCol = $map['url'] ?? $map['permalink'] ?? $map['slug'] ?? null;
+                if (!$urlCol) {
+                    continue;
+                }
+                foreach ($modelClass::query()->limit($maxPages)->pluck($urlCol) as $u) {
+                    $u = trim((string) $u);
+                    if ($u === '') {
+                        continue;
+                    }
+                    // Full URL → strip host; bare slug → wrap in the
+                    // configured prefix (/product/{slug}, /blog/{slug}).
+                    if (preg_match('#^https?://#i', $u)) {
+                        $u = (string) (parse_url($u, PHP_URL_PATH) ?: '');
+                    } elseif (!str_starts_with($u, '/')) {
+                        $u = $m['prefix'] . $u;
+                    }
+                    if ($u !== '' && $u !== '/') {
+                        $add($u);
+                    }
+                }
+            } catch (\Throwable) {
+            }
+        }
+
         // 5. Extra manual paths from config.
         foreach ((array) config('geoengine.extra_paths', []) as $p) {
             $add((string) $p);

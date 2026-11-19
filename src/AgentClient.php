@@ -77,7 +77,7 @@ class AgentClient
      * Register (or re-register) the agent. Returns [agent_id, agent_token].
      * Persists credentials into geoengine_settings + .env guidance.
      */
-    public function register(): array
+    public function register(bool $forceReplace = false): array
     {
         $siteUrl = rtrim((string) config('geoengine.site_url'), '/');
         $projectKey = (string) config('geoengine.project_key', '');
@@ -93,11 +93,19 @@ class AgentClient
                 'site_url' => $siteUrl,
                 'cms_type' => 'laravel',
                 'project_api_key' => $projectKey,
+                'force_replace' => $forceReplace,
             ],
             'headers' => ['Content-Type' => 'application/json'],
         ]);
         $status = $resp->getStatusCode();
         $body = json_decode((string) $resp->getBody(), true) ?: [];
+        if ($status === 409) {
+            throw new \RuntimeException(
+                'A live agent is already registered for this site. '
+                . 'If you really want to replace it, rerun with --force-replace. '
+                . ($body['detail'] ?? '')
+            );
+        }
         if ($status >= 400) {
             throw new \RuntimeException(
                 'Agent registration failed (HTTP ' . $status . '): '

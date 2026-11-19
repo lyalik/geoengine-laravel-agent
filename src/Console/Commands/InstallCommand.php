@@ -11,7 +11,8 @@ class InstallCommand extends Command
         {--key= : Project API key (ge_…) — overrides GEO_ENGINE_PROJECT_KEY}
         {--site= : Public site URL — overrides GEO_ENGINE_SITE_URL/APP_URL}
         {--no-register : Skip platform registration (config only)}
-        {--no-migrations : Skip geoengine_* table migrations (create them manually)}';
+        {--no-migrations : Skip geoengine_* table migrations (create them manually)}
+        {--force-replace : Replace an already-live agent registration (rotates tokens)}';
 
     protected $description = 'Install/activate the GEO Engine Laravel agent';
 
@@ -59,7 +60,7 @@ class InstallCommand extends Command
         $this->info('Registering agent with GEO Engine…');
         try {
             $client = new AgentClient();
-            $res = $client->register();
+            $res = $client->register((bool) $this->option('force-replace'));
             $this->writeEnv([
                 'GEO_ENGINE_AGENT_ID' => (string) $res['agent_id'],
                 'GEO_ENGINE_AGENT_TOKEN' => $res['agent_token'],

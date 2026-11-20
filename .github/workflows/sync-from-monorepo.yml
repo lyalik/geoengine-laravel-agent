@@ -1,9 +1,9 @@
 name: sync-from-monorepo
 
-# Source of truth lives in the monorepo (lyalik/geo-engine,
-# path agents/laravel/geoengine-agent). This job clones the monorepo,
-# subtree-splits the package subtree and force-pushes it to main here.
-# GITHUB_TOKEN of THIS repo is enough — the monorepo is public, no PAT.
+# Source of truth lives in the PRIVATE monorepo (lyalik/geo-engine,
+# path agents/laravel/geoengine-agent). This job clones it over SSH via
+# a read-only deploy key (secret MONOREPO_SSH_KEY), subtree-splits the
+# package subtree and pushes to main here using this repo's GITHUB_TOKEN.
 
 on:
   schedule:
@@ -22,11 +22,15 @@ jobs:
           fetch-depth: 0
           path: pkg
 
-      - uses: actions/checkout@v4
-        with:
-          repository: lyalik/geo-engine
-          fetch-depth: 0
-          path: mono
+      - name: Set up monorepo deploy key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.MONOREPO_SSH_KEY }}" > ~/.ssh/mono_key
+          chmod 600 ~/.ssh/mono_key
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Clone monorepo
+        run: GIT_SSH_COMMAND="ssh -i ~/.ssh/mono_key -o IdentitiesOnly=yes" git clone --quiet git@github.com:lyalik/geo-engine.git mono
 
       - name: Split subtree and push to package main
         run: |

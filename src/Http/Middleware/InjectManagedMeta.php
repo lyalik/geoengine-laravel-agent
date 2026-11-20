@@ -228,11 +228,17 @@ class InjectManagedMeta
         }
 
         // inject_content_block: a stored HTML fragment rendered into the body
-        // (AI-GEO citability answers). Default anchor is right after the first
-        // <h1>; fall back to </body> when the page has no h1.
+        // (AI-GEO citability answers). Technical-only contract — the fragment
+        // is forced into a <template> wrapper so it stays in the DOM for AI
+        // crawlers but renders nothing for visitors; injected content must
+        // never alter the site's visual layout. Default anchor is right
+        // after the first <h1>; fall back to </body> when the page has no h1.
         $extra = is_array($row->extra) ? $row->extra : [];
         $contentBlock = is_string($extra['content_block'] ?? null) ? trim($extra['content_block']) : '';
         if ($contentBlock !== '') {
+            if (stripos($contentBlock, '<template') !== 0) {
+                $contentBlock = '<template data-geoengine="content">' . $contentBlock . '</template>';
+            }
             $position = (string) ($extra['content_block_position'] ?? 'after_h1');
             $wrapped = "\n<!-- GEO Engine content block -->\n" . $contentBlock . "\n<!-- /GEO Engine content block -->\n";
             if ($position === 'before_body' && stripos($content, '</body>') !== false) {

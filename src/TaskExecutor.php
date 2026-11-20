@@ -505,6 +505,33 @@ class TaskExecutor
     {
         $map = (array) config('geoengine.catalog_map', []);
         $siteUrl = rtrim((string) config('geoengine.site_url', ''), '/');
+        $urlPrefix = rtrim((string) config('geoengine.catalog_url_prefix', '/product/'), '/') . '/';
+
+        // Resolve mapped columns against the model's real schema — a map
+        // pointing at a non-existent column silently yields null for every
+        // row (observed: 5200 items synced with no name and fabricated
+        // /products/{id} URLs that all 404 on the site).
+        try {
+            $columns = \Illuminate\Support\Facades\Schema::getColumnListing($model::make()->getTable());
+        } catch (\Throwable) {
+            $columns = [];
+        }
+        $resolve = function (string $key, array $candidates) use ($map, $columns) {
+            $col = $map[$key] ?? null;
+            if ($col && (!$columns || in_array($col, $columns, true))) {
+                return $col;
+            }
+            foreach ($candidates as $c) {
+                if (in_array($c, $columns, true)) {
+                    return $c;
+                }
+            }
+            return $col; // keep configured value — let the query decide
+        };
+        $nameCol = $resolve('name', ['name', 'title', 'product_name', 'fullname', 'naimenovanie', 'nom', 'caption']);
+        $urlCol = $resolve('url', ['url', 'permalink', 'link', 'seo_url', 'page_url', 'href', 'uri']);
+        $slugCol = $resolve('slug', ['slug', 'code', 'simcode', 'alias', 'sef', 'sef_code', 'lat_name']);
+
         $q = $model::query()->orderBy($map['external_id'] ?? 'id');
         // modified_since filter: use the mapped column or fall back to
         // updated_at when the model's table actually has it.
@@ -526,14 +553,30 @@ class TaskExecutor
         foreach ($rows as $row) {
             $get = fn (string $key) => $map[$key] ?? null ? ($row->{$map[$key]} ?? null) : null;
             $item = ['external_id' => (string) ($get('external_id') ?? $row->getKey()), 'kind' => 'product'];
-            foreach (['sku', 'name', 'short_description', 'description', 'price', 'url', 'image', 'images', 'category', 'attributes'] as $f) {
+            foreach (['sku', 'short_description', 'description', 'price', 'image', 'images', 'category', 'attributes'] as $f) {
                 $v = $get($f);
                 if ($v !== null) {
                     $item[$f] = $v;
                 }
             }
-            if (empty($item['url']) && $siteUrl) {
-                $item['url'] = $siteUrl . '/products/' . $item['external_id'];
+            $v = $nameCol ? ($row->{$nameCol} ?? null) : null;
+            if ($v !== null && $v !== '') {
+                $item['name'] = $v;
+            }
+            $v = $urlCol ? ($row->{$urlCol} ?? null) : null;
+            if ($v !== null && $v !== '') {
+                $item['url'] = (string) $v;
+            }
+            // URL fallback: real slug + configured prefix — never the
+            // hardcoded /products/{id} guess that produced dead links.
+            if (empty($item['url'])) {
+                $slug = $slugCol ? trim((string) ($row->{$slugCol} ?? '')) : '';
+                if ($slug !== '') {
+                    $path = str_contains($slug, '/') ? '/' . ltrim($slug, '/') : $urlPrefix . $slug;
+                    $item['url'] = $siteUrl ? $siteUrl . $path : $path;
+                } elseif ($siteUrl) {
+                    $item['url'] = $siteUrl . $urlPrefix . $item['external_id'];
+                }
             }
             $items[] = $item;
         }
@@ -602,6 +645,34 @@ class TaskExecutor
             ['external_id' => $rawId],
             ['kind' => $existing->kind ?? 'product', 'fields' => $merged, 'modified_at' => now()]
         );
+
+        // Mirror generated product meta onto the page-level SeoMeta row:
+        // the catalog pipeline has the richest product context (sku, price,
+        // attributes) so its meta_title/meta_description should own the
+        // live page meta — not a second generic pass over the same URL.
+        if (isset($fields['meta_title']) || isset($fields['meta_description'])) {
+            $path = '';
+            $u = (string) ($merged['url'] ?? '');
+            if ($u !== '') {
+                $path = SeoStore::normalizePath((string) (parse_url($u, PHP_URL_PATH) ?: ''));
+            }
+            if ($path !== '') {
+                try {
+                    $meta = SeoMeta::firstOrNew(['path' => $path]);
+                    if (isset($fields['meta_title'])) {
+                        $meta->title = (string) $fields['meta_title'];
+                    }
+                    if (isset($fields['meta_description'])) {
+                        $meta->description = (string) $fields['meta_description'];
+                    }
+                    if ($meta->indexable === null) {
+                        $meta->indexable = true;
+                    }
+                    $meta->save();
+                } catch (\Throwable) {
+                }
+            }
+        }
 
         TaskHistory::create([
             'task_id' => $taskId,

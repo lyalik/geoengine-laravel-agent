@@ -43,17 +43,46 @@ class SiteScanner
             $pages[] = ['path' => $path, 'url' => $path] + $extra;
         };
 
-        // 1. Registered GET routes — skip framework/api/agent internals.
+        // 1. Registered GET routes — skip framework/api/agent internals
+        //    AND utility endpoints (search handlers, sitemap.xml, 1C
+        //    exchange, cart/auth/account flows). Those are not pages:
+        //    submitting them gives the platform slugs it would otherwise
+        //    "optimize" with meta hallucinated from the URL.
+        $nonPageFirst = [
+            'api', 'geo-engine', '_ignition', 'telescope', 'horizon', 'vendor',
+            'livewire', 'broadcasting', 'sanctum', 'debugbar',
+            'search', 'filter', 'sitemap', 'robots', 'feed', 'rss', 'atom',
+            '1c', 'exchange', 'export', 'import', 'ajax', 'xhr',
+            'cart', 'basket', 'checkout', 'order', 'payment', 'delivery',
+            'compare', 'favorites', 'favorite', 'wishlist',
+            'subscribe', 'unsubscribe', 'vote', 'poll', 'like', 'track',
+            'cron', 'webhook', 'callback', 'oauth', 'saml',
+            'login', 'logout', 'register', 'registration', 'password', 'forgot',
+            'profile', 'account', 'lk', 'cabinet', 'personal',
+            'upload', 'uploads', 'cgi-bin', 'bitrix', 'admin',
+        ];
+        $nonPageLeaf = [
+            'select', 'set', 'change', 'choose', 'detect', 'save', 'clear',
+            'reset', 'toggle', 'add', 'remove', 'delete', 'apply', 'confirm',
+            'success', 'result', 'print', 'share', 'send', 'query', 'key',
+        ];
         try {
             foreach (Route::getRoutes() as $route) {
                 if (!in_array('GET', $route->methods(), true) && !in_array('HEAD', $route->methods(), true)) {
                     continue;
                 }
-                $uri = trim((string) $route->uri(), '/');
+                $uri = strtolower(trim((string) $route->uri(), '/'));
                 if ($uri === '' || str_contains($uri, '{')) {
                     continue; // parameterized routes can't be enumerated
                 }
-                if (preg_match('#^(api|geo-engine|_ignition|telescope|horizon|vendor)(/|$)#', $uri)) {
+                $segments = explode('/', $uri);
+                if (in_array($segments[0], $nonPageFirst, true)) {
+                    continue;
+                }
+                if (count($segments) > 1 && in_array(end($segments), $nonPageLeaf, true)) {
+                    continue;
+                }
+                if (preg_match('#\.(xml|txt|ico|json|rss|atom|xsl|csv|php)$#i', $uri)) {
                     continue;
                 }
                 $add('/' . $uri);

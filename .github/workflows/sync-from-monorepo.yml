@@ -34,9 +34,9 @@ jobs:
 
       - name: Split subtree and push to package main
         run: |
+          cd mono
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          cd mono
           git subtree split --prefix=agents/laravel/geoengine-agent -b split-out
           cd ../pkg
           git fetch ../mono split-out

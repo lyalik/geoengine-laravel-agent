@@ -4,5 +4,5 @@ namespace GeoEngine\Agent;
 
 final class Version
 {
-    public const VERSION = '1.9.28';
+    public const VERSION = '1.9.29';
 }

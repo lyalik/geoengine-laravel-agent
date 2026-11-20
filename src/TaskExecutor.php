@@ -60,7 +60,8 @@ class TaskExecutor
                 'self_uninstall' => $this->unsupported($type, 'uninstall is manual: remove the package, run migrations rollback, delete geoengine_* tables'),
                 'scan_site_structure' => SiteScanner::runAndSubmit($payload, $this->client),
                 'sync_redirects' => $this->syncRedirects($payload),
-                'publish_content_plan', 'create_content', 'update_article', 'update_content' => $this->publishContent($payload, $taskId, $type),
+                'publish_content_plan', 'create_content', 'update_article' => $this->publishContent($payload, $taskId, $type),
+                'update_content' => $this->updatePageContent($payload, $taskId),
                 'inject_content_block' => $this->injectContentBlock($payload, $taskId),
                 'update_category', 'update_information' => $this->unsupported($type, 'Laravel agent has no native taxonomy/information pages — use publish_content_plan'),
                 'set_geotargeting' => $this->setGeotargeting($payload),
@@ -810,6 +811,64 @@ class TaskExecutor
             'success' => true,
             'message' => 'content published: /blog/' . $slug,
             'result_data' => ['slug' => $slug, 'url' => $articleUrl, 'page_id' => $page->id],
+        ];
+    }
+
+    /**
+     * update_content targets an EXISTING page by url — it must never
+     * create a record. The shared publish path slugifies the content into
+     * a new page, which turned advisory text ("Expand the page to at
+     * least 300 words…") into literal junk pages on client sites.
+     */
+    private function updatePageContent(array $payload, int $taskId): array
+    {
+        $url = (string) ($payload['url'] ?? $payload['page'] ?? '');
+        $content = (string) ($payload['content'] ?? '');
+        $title = (string) ($payload['title'] ?? '');
+        if ($url === '' || $content === '') {
+            return ['success' => false, 'message' => '', 'error' => 'update_content: missing url/content'];
+        }
+        $path = trim((string) parse_url($url, PHP_URL_PATH), '/');
+        if ($path === '') {
+            return ['success' => false, 'message' => '', 'error' => 'update_content: cannot derive slug from url'];
+        }
+
+        $model = (string) config('geoengine.posts_model', '');
+        if ($model !== '' && class_exists($model)) {
+            $map = (array) config('geoengine.posts_map', []);
+            $col = fn (string $key) => $map[$key] ?? $key;
+            $rec = $model::where($col('slug'), $path)->first()
+                ?: $model::where($col('slug'), basename($path))->first();
+            if (!$rec) {
+                return ['success' => false, 'message' => '', 'error' => "update_content: page not found for /{$path}"];
+            }
+            $data = [$col('content') => $content];
+            if ($title !== '') {
+                $data[$col('title')] = $title;
+            }
+            $rec->update($data);
+            return [
+                'success' => true,
+                'message' => "content updated: /{$path}",
+                'result_data' => ['slug' => $path],
+            ];
+        }
+
+        $page = Page::where('slug', $path)->first()
+            ?: Page::where('slug', basename($path))->first();
+        if (!$page) {
+            return ['success' => false, 'message' => '', 'error' => "update_content: page not found for /{$path}"];
+        }
+        $data = ['content' => $content];
+        if ($title !== '') {
+            $data['title'] = $title;
+        }
+        $page->update($data);
+
+        return [
+            'success' => true,
+            'message' => "content updated: /{$page->slug}",
+            'result_data' => ['slug' => $page->slug, 'page_id' => $page->id],
         ];
     }
 

@@ -32,7 +32,7 @@ jobs:
       - name: Clone monorepo
         run: GIT_SSH_COMMAND="ssh -i ~/.ssh/mono_key -o IdentitiesOnly=yes" git clone --quiet git@github.com:lyalik/geo-engine.git mono
 
-      - name: Split subtree and push to package main
+      - name: Split subtree and merge into package main
         run: |
           cd mono
           git config user.name "github-actions[bot]"
@@ -40,7 +40,10 @@ jobs:
           git subtree split --prefix=agents/laravel/geoengine-agent -b split-out
           cd ../pkg
           git fetch ../mono split-out
-          git push origin FETCH_HEAD:main
+          # main = split history + CI commits on top; merge keeps .github/*
+          # while -X theirs makes package files match the monorepo exactly.
+          git merge --no-edit -X theirs -m "sync package from monorepo" FETCH_HEAD || true
+          if git diff --quiet HEAD origin/main; then echo "up to date"; else git push origin main; fi
 
       - name: Sync version tag from Version.php
         env:

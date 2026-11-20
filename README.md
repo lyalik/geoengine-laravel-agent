@@ -4,9 +4,13 @@
 [GEO Engine](https://geoengine.pro): платформа ставит задачи, агент
 исполняет их на сайте — мета, schema, файлы, каталог, контент, откаты.
 
-- Версия: **1.9.20**
+- Версия: **1.9.29**
 - PHP 8.1+, Laravel 9–13
-- Установка: см. `INSTALL.md`
+- Пакет: [`geoengine/agent` на Packagist](https://packagist.org/packages/geoengine/agent)
+- Исходники: [github.com/lyalik/geoengine-laravel-agent](https://github.com/lyalik/geoengine-laravel-agent)
+  (subtree-split монорепо `geo-engine`, автосинк каждые 30 мин)
+- Установка: `composer require geoengine/agent` → обновления `composer update geoengine/agent`;
+  детали в `INSTALL.md`
 
 ## Архитектура
 
@@ -25,7 +29,18 @@ geoengine.pro ──push──▶ POST /api/geo-engine/webhook ──▶ TaskExe
 - **Webhook push**: платформа доставляет задачи мгновенно; ack
   `{"success":true,"accepted":N}`, исполнение в `terminating`-колбэке.
 - **Self-update**: `self_update` задача → zip с `/agent/package`,
-  backup+rollback поверх `vendor/geoengine/agent`.
+  backup+rollback поверх `vendor/geoengine/agent`. Composer-установки
+  также обновляются через `composer update geoengine/agent` (релизы =
+  git-теги пакетного репозитория).
+
+## Контракт контента
+
+- Внедряемые фрагменты (`inject_content_block`) всегда уходят в DOM
+  **невидимо** — обёрнуты в `<template class="ai-citability-fix">`;
+  middleware дополнительно оборачивает любой хранимый фрагмент не в
+  `<template>` (старые записи становятся невидимыми после обновления).
+- `update_content` обновляет только существующую страницу по URL — не
+  нашёл → fail. Страницы из инструкций не создаются.
 
 ## Безопасность
 

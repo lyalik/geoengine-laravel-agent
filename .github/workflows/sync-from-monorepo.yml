@@ -1,0 +1,52 @@
+name: sync-from-monorepo
+
+# Source of truth lives in the monorepo (lyalik/geo-engine,
+# path agents/laravel/geoengine-agent). This job clones the monorepo,
+# subtree-splits the package subtree and force-pushes it to main here.
+# GITHUB_TOKEN of THIS repo is enough — the monorepo is public, no PAT.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: pkg
+
+      - uses: actions/checkout@v4
+        with:
+          repository: lyalik/geo-engine
+          fetch-depth: 0
+          path: mono
+
+      - name: Split subtree and push to package main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cd mono
+          git subtree split --prefix=agents/laravel/geoengine-agent -b split-out
+          cd ../pkg
+          git fetch ../mono split-out
+          git push origin FETCH_HEAD:main
+
+      - name: Sync version tag from Version.php
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd mono
+          VER=$(grep -oP "VERSION\s*=\s*'\K[^']+" agents/laravel/geoengine-agent/src/Version.php)
+          if [ -z "$VER" ]; then echo "no version found"; exit 1; fi
+          if git ls-remote --tags "https://github.com/lyalik/geoengine-laravel-agent.git" | grep -q "refs/tags/${VER}$"; then
+            echo "tag ${VER} already published"; exit 0
+          fi
+          git tag -f "$VER" split-out
+          git push "https://x-access-token:${GH_TOKEN}@github.com/lyalik/geoengine-laravel-agent.git" "$VER" --force

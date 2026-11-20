@@ -4,7 +4,7 @@
 [GEO Engine](https://geoengine.pro): платформа ставит задачи, агент
 исполняет их на сайте — мета, schema, файлы, каталог, контент, откаты.
 
-- Версия: **1.9.30**
+- Версия: **1.9.31**
 - PHP 8.1+, Laravel 9–13
 - Пакет: [`geoengine/agent` на Packagist](https://packagist.org/packages/geoengine/agent)
 - Исходники: [github.com/lyalik/geoengine-laravel-agent](https://github.com/lyalik/geoengine-laravel-agent)

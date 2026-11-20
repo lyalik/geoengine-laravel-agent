@@ -580,14 +580,35 @@ class TaskExecutor
             }
             $items[] = $item;
         }
+        // Mapping diagnostics: when every item on the page resolves to
+        // external_id + fallback URL only, the configured model/map does not
+        // expose product fields — report the real schema so the integration
+        // owner can fix GEO_ENGINE_CATALOG_MODEL / catalog_map.
+        $nameless = 0;
+        foreach ($items as $it) {
+            if (empty($it['name'])) {
+                $nameless++;
+            }
+        }
+        $diag = [
+            'table' => $table ?? null,
+            'columns' => $columns ?: null,
+            'name_col' => $nameCol,
+            'url_col' => $urlCol,
+            'slug_col' => $slugCol,
+            'nameless_items' => $nameless,
+        ];
         return [
             'success' => true,
-            'message' => 'catalog page (model)',
+            'message' => $nameless === count($items) && $items
+                ? 'catalog page (model): all items nameless — catalog_map does not match table columns'
+                : 'catalog page (model)',
             'result_data' => [
                 'items' => $items,
                 'total' => $total,
                 'has_more' => $hasMore,
                 'next_offset' => $offset + count($items),
+                'mapping' => $diag,
             ],
         ];
     }

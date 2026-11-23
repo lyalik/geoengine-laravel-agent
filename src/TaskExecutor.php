@@ -510,9 +510,15 @@ class TaskExecutor
         // Resolve mapped columns against the model's real schema — a map
         // pointing at a non-existent column silently yields null for every
         // row (observed: 5200 items synced with no name and fabricated
-        // /products/{id} URLs that all 404 on the site).
+        // /products/{id} URLs that all 404 on the site). The schema builder
+        // MUST come from the model's own connection — catalog tables can
+        // live on a non-default DB (Schema:: facade checks the default
+        // connection and sees nothing there).
         try {
-            $columns = \Illuminate\Support\Facades\Schema::getColumnListing($model::make()->getTable());
+            $instance = new $model;
+            $table = $instance->getTable();
+            $schema = $instance->getConnection()->getSchemaBuilder();
+            $columns = $schema->getColumnListing($table);
         } catch (\Throwable) {
             $columns = [];
         }
@@ -534,12 +540,15 @@ class TaskExecutor
 
         $q = $model::query()->orderBy($map['external_id'] ?? 'id');
         // modified_since filter: use the mapped column or fall back to
-        // updated_at when the model's table actually has it.
+        // updated_at when the model's table actually has it. Checked on
+        // the model's own connection (see above) — the Schema facade hit
+        // the default DB and never found the column on remote catalogs.
         $sinceCol = $map['modified_at'] ?? 'updated_at';
+        $sinceApplied = false;
         try {
-            $table = $model::make()->getTable();
-            if ($since && \Illuminate\Support\Facades\Schema::hasColumn($table, $sinceCol)) {
+            if ($since && isset($schema) && $schema->hasColumn($table, $sinceCol)) {
                 $q->where($sinceCol, '>=', $since);
+                $sinceApplied = true;
             }
         } catch (\Throwable) {
         }
@@ -592,10 +601,13 @@ class TaskExecutor
         }
         $diag = [
             'table' => $table ?? null,
+            'connection' => isset($instance) ? $instance->getConnectionName() : null,
             'columns' => $columns ?: null,
             'name_col' => $nameCol,
             'url_col' => $urlCol,
             'slug_col' => $slugCol,
+            'since_col' => $sinceCol,
+            'since_applied' => $sinceApplied,
             'nameless_items' => $nameless,
         ];
         return [

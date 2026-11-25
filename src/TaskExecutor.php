@@ -42,7 +42,7 @@ class TaskExecutor
                 'update_meta', 'update_seo_meta' => $this->updateMeta($payload, $taskId, $type),
                 'update_meta_batch' => $this->updateMetaBatch($payload, $taskId),
                 'inject_schema', 'add_schema' => $this->injectSchema($payload, $taskId, $type),
-                'add_faq' => $this->addFaq($payload, $taskId),
+                'add_faq', 'inject_faq' => $this->injectFaq($payload, $taskId),
                 'fix_seo' => $this->fixSeo($payload, $taskId),
                 'apply_preset' => $this->applyPreset($payload, $taskId),
                 'apply_command_action' => $this->applyCommandAction($payload, $taskId),
@@ -189,15 +189,60 @@ class TaskExecutor
         return ['success' => true, 'message' => 'schema applied', 'result_data' => ['page' => SeoStore::normalizePath($url)]];
     }
 
-    private function addFaq(array $payload, int $taskId): array
+    private function injectFaq(array $payload, int $taskId): array
     {
         $url = (string) ($payload['url'] ?? $payload['page'] ?? '');
         $items = $payload['faq_items'] ?? $payload['faq'] ?? $payload['items'] ?? null;
         if ($url === '' || !is_array($items)) {
-            return ['success' => false, 'message' => '', 'error' => 'add_faq: missing url or faq_items'];
+            return ['success' => false, 'message' => '', 'error' => 'inject_faq: missing url or faq_items'];
         }
-        SeoStore::apply($url, ['faq' => $items], $taskId, 'add_faq');
-        return ['success' => true, 'message' => 'faq applied', 'result_data' => ['page' => SeoStore::normalizePath($url), 'count' => count($items)]];
+        $page = SeoStore::normalizePath($url);
+
+        // Empty item list = explicit clear — drop the slot and the FAQ
+        // items (the FAQPage JSON-LD is generated from them at render).
+        if (!$items) {
+            SeoStore::apply($url, ['faq' => null, 'faq_html' => ''], $taskId, 'inject_faq');
+            return ['success' => true, 'message' => 'faq cleared', 'result_data' => ['url' => $page, 'mode' => 'cleared', 'items' => 0]];
+        }
+
+        $qa = [];
+        foreach ($items as $item) {
+            $q = is_array($item) ? ($item['question'] ?? $item['q'] ?? '') : (string) $item;
+            $a = is_array($item) ? ($item['answer'] ?? $item['a'] ?? '') : '';
+            if ($q !== '') {
+                $qa[] = ['question' => (string) $q, 'answer' => (string) $a];
+            }
+        }
+        if (!$qa) {
+            return ['success' => false, 'message' => '', 'error' => 'inject_faq: no valid faq_items'];
+        }
+
+        // Default = technical-only <template>; `visible` ships a real
+        // <section> — same text as the FAQPage schema. The middleware
+        // renders the slot before the first <footer>, else </body>.
+        $visible = !empty($payload['visible']);
+        $heading = trim((string) ($payload['heading'] ?? ''));
+        if ($heading === '') {
+            $heading = 'Частые вопросы';
+        }
+        $tag = $visible ? 'section' : 'template';
+        $html = '<' . $tag . ' class="geoengine-faq" data-geoengine="faq"><h2>' . e($heading) . '</h2><div itemscope itemtype="https://schema.org/FAQPage">' . "\n";
+        foreach ($qa as $pair) {
+            $html .= '<div itemscope itemprop="mainEntity" itemtype="https://schema.org/Question">' . "\n";
+            $html .= '<h3 itemprop="name">' . e($pair['question']) . '</h3>' . "\n";
+            $html .= '<div itemscope itemprop="acceptedAnswer" itemtype="https://schema.org/Answer"><div itemprop="text">' . e($pair['answer']) . '</div></div></div>' . "\n";
+        }
+        $html .= '</div></' . $tag . '>';
+
+        // `faq` items generate the FAQPage JSON-LD at render time;
+        // `faq_html` is the body slot — both snapshot-rolled back by
+        // SeoStore::apply's before-snapshot.
+        SeoStore::apply($url, ['faq' => $qa, 'faq_html' => $html], $taskId, 'inject_faq');
+        return [
+            'success' => true,
+            'message' => 'faq applied',
+            'result_data' => ['url' => $page, 'mode' => $visible ? 'visible' : 'template', 'items' => count($qa)],
+        ];
     }
 
     private function fixSeo(array $payload, int $taskId): array

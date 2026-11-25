@@ -185,7 +185,7 @@ class InjectManagedMeta
         foreach ($schemas as $schema) {
             $json = json_encode($schema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             if ($json) {
-                $tags[] = '<script type="application/ld+json">' . $json . '</script>';
+                $tags[] = '<script type="application/ld+json" data-geoengine="injected">' . $json . '</script>';
             }
         }
 
@@ -234,6 +234,19 @@ class InjectManagedMeta
         // never alter the site's visual layout. Default anchor is right
         // after the first <h1>; fall back to </body> when the page has no h1.
         $extra = is_array($row->extra) ? $row->extra : [];
+
+        // FAQ runtime slot (inject_faq) — before the first <footer>, else
+        // </body>. The fragment is already correctly wrapped (<section>
+        // visible / <template> technical-only).
+        $faqHtml = is_string($extra['faq_html'] ?? null) ? trim($extra['faq_html']) : '';
+        if ($faqHtml !== '') {
+            if (preg_match('/<footer[\s>]/i', $content, $fm, PREG_OFFSET_CAPTURE)) {
+                $pos = $fm[0][1];
+                $content = substr($content, 0, $pos) . "\n" . $faqHtml . "\n" . substr($content, $pos);
+            } elseif (stripos($content, '</body>') !== false) {
+                $content = (string) preg_replace('#</body>#i', "\n" . $faqHtml . "\n</body>", $content, 1);
+            }
+        }
         $contentBlock = is_string($extra['content_block'] ?? null) ? trim($extra['content_block']) : '';
         if ($contentBlock !== '') {
             if (stripos($contentBlock, '<template') !== 0) {
